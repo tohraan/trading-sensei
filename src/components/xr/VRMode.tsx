@@ -316,13 +316,55 @@ export const VRMode = ({ scenario, onScenarioChange }: Props) => {
 
   return (
     <div ref={containerRef} className="fixed inset-0 vr-space overflow-hidden flex">
-      {/* Hidden full-screen video for tracking projection mapping */}
+      {/* Hidden video for MediaPipe tracking (invisible, full-size for coordinate mapping) */}
       <video
         ref={hiddenVideoRef}
         playsInline muted
         className="absolute opacity-0 pointer-events-none"
         style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)", zIndex: -1 }}
       />
+
+      {/* ── Camera PiP Preview ─ bottom right corner ───────────────────── */}
+      {camReady && (
+        <div
+          className="fixed bottom-6 right-6 xr-panel xr-corner overflow-hidden pointer-events-none"
+          style={{ zIndex: 50, width: 220, aspectRatio: "16/9", borderRadius: 4 }}
+        >
+          {/* Label */}
+          <div className="absolute top-1.5 left-2 font-mono text-[7px] tracking-[0.3em] text-foreground/50 z-10">
+            LIVE · BIOMETRIC
+          </div>
+          {/* Mirrored live feed sourced from the same MediaPipe video */}
+          <video
+            playsInline muted
+            ref={(el) => {
+              if (el && hiddenVideoRef.current?.srcObject) {
+                el.srcObject = hiddenVideoRef.current.srcObject as MediaStream;
+                el.play().catch(() => {});
+              }
+            }}
+            className="w-full h-full object-cover"
+            style={{ transform: "scaleX(-1)", filter: "brightness(0.85) saturate(0.8)" }}
+          />
+          {/* Hand tracking dot overlay */}
+          {hands.length > 0 && (
+            <svg className="absolute inset-0 w-full h-full" viewBox={`0 0 ${window.innerWidth} ${window.innerHeight}`}>
+              {hands.map((hand, hi) =>
+                [4, 8].map((lmIdx) => (
+                  <circle
+                    key={`${hi}-${lmIdx}`}
+                    cx={hand.landmarks[lmIdx].x}
+                    cy={hand.landmarks[lmIdx].y}
+                    r={lmIdx === 8 ? 5 : 4}
+                    fill={hand.isPinching ? "hsl(var(--success))" : "white"}
+                    opacity={0.9}
+                  />
+                ))
+              )}
+            </svg>
+          )}
+        </div>
+      )}
       
       {/* Countdown Ring overlay */}
       {timerProgress !== null && primaryHandRef.current && (

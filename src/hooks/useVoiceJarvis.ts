@@ -121,23 +121,37 @@ export function useVoiceSensei({ onCommand, enabled, stressLevel = 0 }: SenseiOp
       if (!synthRef.current) return;
       if (priority) synthRef.current.cancel();
       const utt = new SpeechSynthesisUtterance(text);
-      utt.pitch = 0.82;
-      utt.rate = 0.88;
-      utt.volume = 1.0;
-      // Try to load a good male voice; voices load async in some browsers
+
+      // Natural, warm, measured tone — less robotic
+      utt.pitch = 1.0;     // natural pitch (1.0 = default)
+      utt.rate = 0.82;     // slightly slower = more deliberate, less rushed
+      utt.volume = 0.92;
+
+      // Prefer the most natural-sounding available voice
       const trySetVoice = () => {
         const voices = synthRef.current.getVoices();
         const preferred =
-          voices.find((v) => /google uk english male|daniel|alex|fred|james/i.test(v.name)) ??
+          // Best natural voices in priority order:
+          voices.find((v) => /google us english/i.test(v.name)) ??
+          voices.find((v) => /microsoft guy|microsoft mark|microsoft david/i.test(v.name)) ??
+          voices.find((v) => /google uk english male|daniel/i.test(v.name)) ??
           voices.find(
             (v) =>
               v.lang.startsWith("en") &&
-              !/(female|zira|hazel|samantha|victoria|karen|moira|tessa)/i.test(v.name)
+              !/(female|zira|hazel|samantha|victoria|karen|moira|tessa|susan)/i.test(v.name)
           ) ??
           voices[0];
         if (preferred) utt.voice = preferred;
       };
       trySetVoice();
+      // Some browsers load voices async — retry if no voices yet
+      if (synthRef.current.getVoices().length === 0) {
+        window.speechSynthesis.onvoiceschanged = () => {
+          trySetVoice();
+          window.speechSynthesis.onvoiceschanged = null;
+        };
+      }
+
       utt.onstart = () => setSpeaking(true);
       utt.onend = () => setSpeaking(false);
       synthRef.current.speak(utt);

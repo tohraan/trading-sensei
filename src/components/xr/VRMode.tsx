@@ -258,6 +258,40 @@ export const VRMode = ({ scenario, onScenarioChange }: Props) => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hands, hitQuad, startTimer, stopTimer]);
 
+  // ── Synthetic global cursor: index finger = mouse, pinch = click ─────────
+  const vrPrevPinchRef = useRef(false);
+  useEffect(() => {
+    if (!hands.length) return;
+    const primary =
+      (primaryHandRef.current
+        ? hands.find((h) => h.handedness === primaryHandRef.current)
+        : undefined) ?? hands[0];
+    if (!primary) return;
+
+    const idx = primary.landmarks[8]; // index fingertip
+    window.dispatchEvent(
+      new MouseEvent("mousemove", { clientX: idx.x, clientY: idx.y, bubbles: true })
+    );
+
+    const isPinching = primary.isPinching;
+    if (isPinching && !vrPrevPinchRef.current) {
+      window.dispatchEvent(
+        new MouseEvent("mousedown", { clientX: idx.x, clientY: idx.y, bubbles: true })
+      );
+    } else if (!isPinching && vrPrevPinchRef.current) {
+      window.dispatchEvent(
+        new MouseEvent("mouseup", { clientX: idx.x, clientY: idx.y, bubbles: true })
+      );
+      const el = document.elementFromPoint(idx.x, idx.y);
+      if (el) {
+        el.dispatchEvent(
+          new MouseEvent("click", { clientX: idx.x, clientY: idx.y, bubbles: true, view: window })
+        );
+      }
+    }
+    vrPrevPinchRef.current = isPinching;
+  }, [hands]);
+
   // ── Gesture hint text ─────────────────────────────────────────────────────
   const gestureHint = useMemo(() => {
     if (!hands.length) return "[ RAISE HAND TO INTERACT ]";

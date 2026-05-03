@@ -9,6 +9,7 @@ import { HandOverlay } from "./HandOverlay";
 interface Props {
   scenario: Scenario | null;
   onScenarioChange?: (s: Scenario | null) => void;
+  onStressChange?: (stress: number) => void;
 }
 
 const TIMEFRAMES: Timeframe[] = ["1m", "5m", "15m", "1H", "4H", "1D"];
@@ -40,7 +41,7 @@ const CountdownRing = ({ progress, x, y }: { progress: number; x: number; y: num
 };
 
 // ─── VRMode ──────────────────────────────────────────────────────────────────
-export const VRMode = ({ scenario, onScenarioChange }: Props) => {
+export const VRMode = ({ scenario, onScenarioChange, onStressChange }: Props) => {
   // ── Sidebar ──────────────────────────────────────────────────────────────
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeScenario, setActiveScenario] = useState<Scenario | null>(scenario);
@@ -53,10 +54,12 @@ export const VRMode = ({ scenario, onScenarioChange }: Props) => {
     if (onScenarioChange) onScenarioChange(s);
   }, [onScenarioChange]);
 
-  // ── Camera / tracking ───────────────────────────────────────────────
+  // ── Camera / tracking ────────────────────────────────────
   const hiddenVideoRef = useRef<HTMLVideoElement>(null);
+  const pipVideoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [camReady, setCamReady] = useState(false);
+  const [camStream, setCamStream] = useState<MediaStream | null>(null);
 
   useEffect(() => {
     let s: MediaStream | null = null;
@@ -64,15 +67,25 @@ export const VRMode = ({ scenario, onScenarioChange }: Props) => {
       .getUserMedia({ video: { width: 1280, height: 720, facingMode: "user" }, audio: false })
       .then((stream) => {
         s = stream;
-        if (hiddenVideoRef.current) {
-          hiddenVideoRef.current.srcObject = stream;
-          hiddenVideoRef.current.play().catch(() => {});
-        }
+        setCamStream(stream);
         setCamReady(true);
       })
       .catch(() => {});
     return () => { s?.getTracks().forEach((t) => t.stop()); };
   }, []);
+
+  // Robustly wire streams to video elements
+  useEffect(() => {
+    if (hiddenVideoRef.current && camStream) {
+      hiddenVideoRef.current.srcObject = camStream;
+      hiddenVideoRef.current.play().catch(() => {});
+    }
+    if (pipVideoRef.current && camStream) {
+      pipVideoRef.current.srcObject = camStream;
+      pipVideoRef.current.play().catch(() => {});
+    }
+  }, [camStream, camReady]); // Re-run when ready state or stream changes
+
 
   const { frame } = useFaceTracking({
     videoRef: hiddenVideoRef,
@@ -98,6 +111,23 @@ export const VRMode = ({ scenario, onScenarioChange }: Props) => {
   const [tfIdx, setTfIdx] = useState(2); // default 15m
   const [zoomX, setZoomX] = useState(1);
   const [zoomY, setZoomY] = useState(1);
+
+  // ── Stress engine ──────────────────────────────────────────────────────────
+  const stressRef = useRef(50);
+  const [stress, setStress] = useState(50);
+  const [stressTrend, setStressTrend] = useState<"up" | "down" | "flat">("flat");
+
+  useEffect(() => {
+    if (!frame) return;
+    const e = frame.expressions;
+    const d = e.happy * -8 + e.angry * 6 + e.fearful * 5 + e.sad * 3 + e.surprised * 1.5 + (e.neutral - 0.5) * 0.5;
+    const prev = stressRef.current;
+    const next = Math.max(0, Math.min(100, prev * 0.92 + (50 + d * 4) * 0.08));
+    stressRef.current = next;
+    setStress(next);
+    setStressTrend(next > prev + 0.4 ? "up" : next < prev - 0.4 ? "down" : "flat");
+    if (onStressChange) onStressChange(next);
+  }, [frame, onStressChange]);
 
   // Gesture refs
   const primaryHandRef = useRef<"Left" | "Right" | null>(null);
@@ -334,18 +364,14 @@ export const VRMode = ({ scenario, onScenarioChange }: Props) => {
           <div className="absolute top-1.5 left-2 font-mono text-[7px] tracking-[0.3em] text-foreground/50 z-10">
             LIVE · BIOMETRIC
           </div>
-          {/* Mirrored live feed sourced from the same MediaPipe video */}
+          {/* Mirrored live feed — stream wired via useEffect above */}
           <video
+            ref={pipVideoRef}
             playsInline muted
-            ref={(el) => {
-              if (el && hiddenVideoRef.current?.srcObject) {
-                el.srcObject = hiddenVideoRef.current.srcObject as MediaStream;
-                el.play().catch(() => {});
-              }
-            }}
             className="w-full h-full object-cover"
             style={{ transform: "scaleX(-1)", filter: "brightness(0.85) saturate(0.8)" }}
           />
+
           {/* Hand tracking dot overlay */}
           {hands.length > 0 && (
             <svg className="absolute inset-0 w-full h-full" viewBox={`0 0 ${window.innerWidth} ${window.innerHeight}`}>

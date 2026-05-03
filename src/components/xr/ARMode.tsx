@@ -9,7 +9,10 @@ import { FaceMesh } from "./FaceMesh";
 import { HandOverlay } from "./HandOverlay";
 import { CandlestickChart, Timeframe } from "./CandlestickChart";
 
-interface Props { scenario: Scenario | null }
+interface Props {
+  scenario: Scenario | null;
+  onStressChange?: (stress: number) => void;
+}
 
 const TIMEFRAMES: Timeframe[] = ["1m", "5m", "15m", "1H", "4H", "1D"];
 const GRAB_HOLD_MS = 2000;
@@ -396,9 +399,37 @@ function useGestureCards(
 }
 
 // ─── ARMode ──────────────────────────────────────────────────────────────────
-export const ARMode = ({ scenario }: Props) => {
+export const ARMode = ({ scenario, onStressChange }: Props) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [camReady, setCamReady] = useState(false);
+  const [camStream, setCamStream] = useState<MediaStream | null>(null);
+
+  // ── Camera initialization ──────────────────────────────────────────────────
+  useEffect(() => {
+    let s: MediaStream | null = null;
+    navigator.mediaDevices
+      .getUserMedia({ video: { width: 1280, height: 720, facingMode: "user" }, audio: false })
+      .then((stream) => {
+        s = stream;
+        setCamStream(stream);
+        setCamReady(true);
+      })
+      .catch((e) => {
+        console.warn("AR camera denied", e);
+      });
+    return () => {
+      s?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  // Robust stream wiring
+  useEffect(() => {
+    if (videoRef.current && camStream) {
+      videoRef.current.srcObject = camStream;
+      videoRef.current.play().catch(() => {});
+    }
+  }, [camStream]);
 
   // Card refs registry
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -407,11 +438,11 @@ export const ARMode = ({ scenario }: Props) => {
   };
 
   const { status, frame, modelReady } = useFaceTracking({
-    videoRef, containerRef, enabled: true,
+    videoRef, containerRef, enabled: camReady,
   });
 
   const { hands } = useHandTracking({
-    videoRef, containerRef, enabled: true,
+    videoRef, containerRef, enabled: camReady,
   });
 
   // ── Stress engine ──────────────────────────────────────────────────────────
@@ -430,7 +461,8 @@ export const ARMode = ({ scenario }: Props) => {
     stressRef.current = next;
     setStress(next);
     setStressTrend(next > prev + 0.4 ? "up" : next < prev - 0.4 ? "down" : "flat");
-  }, [frame]);
+    if (onStressChange) onStressChange(next);
+  }, [frame, onStressChange]);
 
   useEffect(() => {
     if (scenario?.id !== "emotional") { setBreathingActive(false); sustainedHighRef.current = null; return; }

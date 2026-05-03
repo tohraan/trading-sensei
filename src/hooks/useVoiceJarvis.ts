@@ -162,8 +162,6 @@ export function useVoiceSensei({ onCommand, enabled, stressLevel = 0 }: SenseiOp
 
   const processTranscript = useCallback(
     (transcript: string) => {
-      addCaption("user", transcript);
-
       // Check Q&A first (more specific)
       const qa = QA_PAIRS.find((q) => q.patterns.some((rx) => rx.test(transcript)));
       if (qa) {
@@ -220,6 +218,9 @@ export function useVoiceSensei({ onCommand, enabled, stressLevel = 0 }: SenseiOp
       if (!lastResult.isFinal) return;
       const transcript = lastResult[0].transcript.trim().toLowerCase();
 
+      // Show user caption immediately
+      addCaption("user", transcript);
+
       // Wake word detection
       if (/hey\s*sensei|okay\s*sensei|hi\s*sensei/i.test(transcript)) {
         setListening(true);
@@ -229,7 +230,6 @@ export function useVoiceSensei({ onCommand, enabled, stressLevel = 0 }: SenseiOp
       }
 
       // If not a wake word hit, still process if it's a recognisable command/question
-      // (mic button always works regardless of wake word)
       const combined = transcript;
       const qa = QA_PAIRS.find((q) => q.patterns.some((rx) => rx.test(combined)));
       const nav = NAV_COMMANDS.find((c) => c.patterns.some((rx) => rx.test(combined)));
@@ -258,6 +258,7 @@ export function useVoiceSensei({ onCommand, enabled, stressLevel = 0 }: SenseiOp
     recog.onerror = () => setListening(false);
     recog.onresult = (e: SpeechRecognitionEvent) => {
       const transcript = Array.from(e.results).map((r) => r[0].transcript).join(" ");
+      addCaption("user", transcript);
       processTranscript(transcript);
     };
     recog.start();
@@ -267,28 +268,35 @@ export function useVoiceSensei({ onCommand, enabled, stressLevel = 0 }: SenseiOp
     setListening(false);
   }, []);
 
-  // ── Greeting on mount ─────────────────────────────────────────────────────────
+  // ── Greeting & Initialisation ─────────────────────────────────────────────
   useEffect(() => {
     if (!enabled) return;
-    const t = setTimeout(() => {
+    
+    let hasInteracted = false;
+    const onFirstInteraction = () => {
+      if (hasInteracted) return;
+      hasInteracted = true;
+      
+      // Speak the greeting
       speak("Hello boss. Let's get started.", true);
-    }, 1800);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled]);
-
-  // ── Start continuous wake-word listener ───────────────────────────────────────
-  useEffect(() => {
-    if (!enabled) return;
-    const t = setTimeout(() => startContinuousListening(), 2500);
-    return () => {
-      clearTimeout(t);
-      try { recogRef.current?.abort(); } catch {}
+      
+      // Start continuous listening
+      startContinuousListening();
+      
+      document.removeEventListener("click", onFirstInteraction);
+      document.removeEventListener("keydown", onFirstInteraction);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled]);
 
-  // ── Always-on emotional monitoring: alert if sustained high stress ────────────
+    document.addEventListener("click", onFirstInteraction);
+    document.addEventListener("keydown", onFirstInteraction);
+
+    return () => {
+      document.removeEventListener("click", onFirstInteraction);
+      document.removeEventListener("keydown", onFirstInteraction);
+    };
+  }, [enabled, speak, startContinuousListening]);
+
+  // Cleanup ───────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (stressLevel > 68) {
       if (!sustainedHighRef.current) {

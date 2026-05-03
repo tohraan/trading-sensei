@@ -48,28 +48,16 @@ export const useFaceTracking = ({ videoRef, containerRef, enabled }: Opts) => {
   }, []);
 
   useEffect(() => {
-    if (!enabled) return;
-    let stream: MediaStream | null = null;
-    (async () => {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: 1280, height: 720, facingMode: "user" },
-          audio: false,
-        });
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
-          setStatus("no-face");
-        }
-      } catch (e) {
-        console.warn("camera denied", e);
-        setStatus("denied");
-      }
-    })();
-    return () => {
-      stream?.getTracks().forEach((t) => t.stop());
-    };
-  }, [enabled, videoRef]);
+    if (!enabled || !modelReady) {
+      if (status !== "denied") setStatus("loading");
+      return;
+    }
+    // Assume the video stream is managed by the component.
+    // If the video element is not yet playing, we stay in 'loading' or 'no-face'.
+    if (videoRef.current && videoRef.current.readyState >= 2) {
+      setStatus("no-face");
+    }
+  }, [enabled, modelReady, videoRef, status]);
 
   useEffect(() => {
     if (!enabled || !modelReady || status === "denied") return;

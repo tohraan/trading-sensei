@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ARMode } from "@/components/xr/ARMode";
 import { VRMode } from "@/components/xr/VRMode";
 import { HUDFrame } from "@/components/xr/HUDFrame";
@@ -6,8 +6,9 @@ import { ModeToggle } from "@/components/xr/ModeToggle";
 import { Reticle } from "@/components/xr/Reticle";
 import { ScenarioRail } from "@/components/xr/ScenarioRail";
 import { Scenario, SCENARIOS } from "@/components/xr/scenarios";
-import { useVoiceJarvis } from "@/hooks/useVoiceJarvis";
+import { useVoiceSensei } from "@/hooks/useVoiceJarvis";
 import { JarvisHUD } from "@/components/xr/JarvisHUD";
+import { useFaceTracking } from "@/hooks/useFaceTracking";
 
 const Index = () => {
   const [mode, setMode] = useState<"AR" | "VR">("AR");
@@ -36,7 +37,32 @@ const Index = () => {
     return () => clearTimeout(t);
   }, []);
 
-  // ── Jarvis voice command handler ──────────────────────────────────────────
+  // ── Always-on global biometric stress tracking ─────────────────────────────
+  // Uses a hidden off-screen video element so we track stress in every mode
+  const globalVideoRef = useRef<HTMLVideoElement>(null);
+  const globalContainerRef = useRef<HTMLDivElement>(null);
+  const [stressLevel, setStressLevel] = useState(50);
+  const stressRawRef = useRef(50);
+
+  const { frame: globalFrame } = useFaceTracking({
+    videoRef: globalVideoRef,
+    containerRef: globalContainerRef,
+    enabled: booted,
+  });
+
+  useEffect(() => {
+    if (!globalFrame) return;
+    const e = globalFrame.expressions;
+    const delta =
+      e.happy * -8 + e.angry * 6 + e.fearful * 5 + e.sad * 3 +
+      e.surprised * 1.5 + (e.neutral - 0.5) * 0.5;
+    const prev = stressRawRef.current;
+    const next = Math.max(0, Math.min(100, prev * 0.92 + (50 + delta * 4) * 0.08));
+    stressRawRef.current = next;
+    setStressLevel(next);
+  }, [globalFrame]);
+
+  // ── Sensei voice command handler ───────────────────────────────────────────
   const handleVoiceCommand = useCallback((cmd: string) => {
     switch (cmd) {
       case "learn":
@@ -63,13 +89,28 @@ const Index = () => {
   }, []);
 
   const { listening, speaking, captions, startListening, stopListening } =
-    useVoiceJarvis({ onCommand: handleVoiceCommand, enabled: booted });
+    useVoiceSensei({
+      onCommand: handleVoiceCommand,
+      enabled: booted,
+      stressLevel,
+    });
 
   if (!booted) return <BootScreen />;
 
   return (
     <main className="relative min-h-screen w-full bg-background text-foreground cursor-none">
       <h1 className="sr-only">Trading Sensei XR — AI Trading Co-Pilot Demo</h1>
+
+      {/* Hidden global camera for always-on biometric tracking */}
+      <div ref={globalContainerRef} className="fixed inset-0 pointer-events-none" style={{ zIndex: -99 }}>
+        <video
+          ref={globalVideoRef}
+          playsInline
+          muted
+          className="absolute opacity-0"
+          style={{ width: 1, height: 1 }}
+        />
+      </div>
 
       {mode === "AR" ? (
         <ARMode scenario={scenario} />
@@ -82,7 +123,7 @@ const Index = () => {
       {mode === "AR" && <HUDFrame mode={mode} scene={scenario?.label} />}
       <Reticle />
 
-      {/* Jarvis Voice Assistant */}
+      {/* Sensei Voice Assistant */}
       <JarvisHUD
         listening={listening}
         speaking={speaking}

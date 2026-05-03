@@ -1,11 +1,13 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ARMode } from "@/components/xr/ARMode";
 import { VRMode } from "@/components/xr/VRMode";
 import { HUDFrame } from "@/components/xr/HUDFrame";
 import { ModeToggle } from "@/components/xr/ModeToggle";
 import { Reticle } from "@/components/xr/Reticle";
 import { ScenarioRail } from "@/components/xr/ScenarioRail";
-import { Scenario } from "@/components/xr/scenarios";
+import { Scenario, SCENARIOS } from "@/components/xr/scenarios";
+import { useVoiceJarvis } from "@/hooks/useVoiceJarvis";
+import { JarvisHUD } from "@/components/xr/JarvisHUD";
 
 const Index = () => {
   const [mode, setMode] = useState<"AR" | "VR">("AR");
@@ -34,6 +36,35 @@ const Index = () => {
     return () => clearTimeout(t);
   }, []);
 
+  // ── Jarvis voice command handler ──────────────────────────────────────────
+  const handleVoiceCommand = useCallback((cmd: string) => {
+    switch (cmd) {
+      case "learn":
+        setScenario(SCENARIOS.find((s) => s.id === "learn") ?? null);
+        break;
+      case "trade":
+        setScenario(SCENARIOS.find((s) => s.id === "trade") ?? null);
+        break;
+      case "plan":
+        setScenario(SCENARIOS.find((s) => s.id === "plan") ?? null);
+        break;
+      case "emotional":
+        setScenario(SCENARIOS.find((s) => s.id === "emotional") ?? null);
+        break;
+      case "vr":
+        setMode("VR");
+        break;
+      case "ar":
+        setMode("AR");
+        break;
+      default:
+        break;
+    }
+  }, []);
+
+  const { listening, speaking, captions, startListening, stopListening } =
+    useVoiceJarvis({ onCommand: handleVoiceCommand, enabled: booted });
+
   if (!booted) return <BootScreen />;
 
   return (
@@ -50,6 +81,14 @@ const Index = () => {
       {mode === "AR" && <ScenarioRail active={scenario} onSelect={setScenario} />}
       {mode === "AR" && <HUDFrame mode={mode} scene={scenario?.label} />}
       <Reticle />
+
+      {/* Jarvis Voice Assistant */}
+      <JarvisHUD
+        listening={listening}
+        speaking={speaking}
+        captions={captions}
+        onMicClick={listening ? stopListening : startListening}
+      />
     </main>
   );
 };
